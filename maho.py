@@ -4,7 +4,7 @@ import os
 import time
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-DOWNLOADER_TOKEN = '7912001742:AAGyW44MDw99grkbXKDzEhjQbmoyuAgD43s'
+DOWNLOADER_TOKEN = '7860068219:AAG3J91AILYKGEsYUGm31k_c1MhZpO9Y3jc'
 REPORT_BOT_TOKEN = '7011824186:AAG0dNuE_hqg6tYuEZliyPXl2I3ashFwEHc'
 ADMIN_CHAT_ID = 5711313662
 
