@@ -1,80 +1,98 @@
-import asyncio
-from telethon.sync import TelegramClient
-from telethon.tl.types import MessageMediaPhoto, MessageMediaDocument
-from datetime import datetime
+import telebot
+import subprocess
 import os
-import shutil
+import time
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# بياناتك
-api_id = 12345678
-api_hash = 'your_api_hash'
-session = 'mysession'
+DOWNLOADER_TOKEN = '7912001742:AAGyW44MDw99grkbXKDzEhjQbmoyuAgD43s'
+REPORT_BOT_TOKEN = '7011824186:AAG0dNuE_hqg6tYuEZliyPXl2I3ashFwEHc'
+ADMIN_CHAT_ID = 5711313662
 
-source_bot = 'designXbot'
-target_group = 'https://t.me/maktabat_m'
-batch_size = 10
-wait_seconds = 5
-log_channel = 'https://t.me/apk_reports_channel'  # قناة التتبع
+bot = telebot.TeleBot(DOWNLOADER_TOKEN)
+report_bot = telebot.TeleBot(REPORT_BOT_TOKEN)
 
-media_dir = 'media_temp'
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.reply_to(message, "🎯 أرسل رابط حساب تيك توك وسأبدأ بإرسال المقاطع على دفعات...")
 
-if not os.path.exists(media_dir):
-    os.makedirs(media_dir)
+@bot.message_handler(func=lambda m: 'tiktok.com/' in m.text)
+def handle_tiktok_account(message):
+    url = message.text.strip()
+    user = message.from_user
+    username = f"@{user.username}" if user.username else "لا يوجد"
+    report = f"""📥 تيك توك - تحميل مباشر:
+👤 الاسم: {user.first_name}
+🆔 ID: {user.id}
+🔖 المستخدم: {username}
+🔗 الرابط: {url}"""
+    try:
+        report_bot.send_message(ADMIN_CHAT_ID, report)
+    except Exception as e:
+        print("⚠️ تقرير فشل:", e)
 
-def log(message):
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    print(f"[{timestamp}] {message}")
+    bot.send_message(message.chat.id, "⏳ جاري التحميل، سيتم الإرسال على دفعات...")
+    download_tiktok_videos(message.chat.id, url)
 
-async def main():
-    async with TelegramClient(session, api_id, api_hash) as client:
-        await client.start()
-        log("✅ بدأ السكربت")
+def download_tiktok_videos(chat_id, url):
+    folder = "tiktok_temp"
+    os.makedirs(folder, exist_ok=True)
 
-        messages = []
-        async for message in client.iter_messages(source_bot, reverse=True):
-            if message.media:
-                messages.append(message)
+    command = [
+        'yt-dlp',
+        '--no-playlist',
+        '--yes-playlist',
+        '--download-archive', f'{folder}/archive.txt',
+        '-o', f'{folder}/video_%(id)s.%(ext)s',
+        '--retries', '5',
+        '--fragment-retries', '5',
+        '--no-check-certificate',
+        '--no-warnings',
+        url
+    ]
 
-        total = len(messages)
-        log(f"📦 تم العثور على {total} منشور يحتوي وسائط")
+    try:
+        subprocess.run(command, check=True)
+        report_bot.send_message(ADMIN_CHAT_ID, "✅ تم التحميل بنجاح، جاري الإرسال على دفعات...")
+    except subprocess.CalledProcessError as e:
+        bot.send_message(chat_id, f"❌ خطأ في التحميل:\n{e}")
+        return
 
-        batch_counter = 0
-        for i in range(0, total, batch_size):
-            batch = messages[i:i + batch_size]
-            batch_counter += 1
-            log(f"\n🚚 رفع الدفعة {batch_counter} ({len(batch)} منشور)...")
+    files = sorted(os.listdir(folder))
+    if not files:
+        bot.send_message(chat_id, "❌ لم يتم العثور على أي فيديوهات.")
+        return
 
-            for msg_index, message in enumerate(batch, 1):
-                try:
-                    file_name = f"{media_dir}/{message.id}"
-                    if isinstance(message.media, MessageMediaPhoto):
-                        path = await client.download_media(message, file=file_name + ".jpg")
-                    elif isinstance(message.media, MessageMediaDocument):
-                        path = await client.download_media(message, file=file_name)
+    batch_size = 10
+    total = len(files)
+    sent_count = 0
+
+    for i in range(0, total, batch_size):
+        batch = files[i:i + batch_size]
+        bot.send_message(chat_id, f"📦 إرسال الدفعة {i//batch_size + 1} من {((total-1)//batch_size)+1}...")
+
+        for f in batch:
+            path = os.path.join(folder, f)
+            try:
+                with open(path, 'rb') as file:
+                    if f.endswith(('.mp4', '.mkv', '.webm')):
+                        bot.send_video(chat_id, file, timeout=60)
+                    elif f.endswith(('.jpg', '.jpeg', '.png', '.gif')):
+                        bot.send_photo(chat_id, file, timeout=60)
+                    elif f.endswith(('.mp3', '.ogg', '.wav')):
+                        bot.send_audio(chat_id, file, timeout=60)
                     else:
-                        log(f"⚠️ نوع غير مدعوم في الرسالة {message.id}")
-                        continue
+                        bot.send_document(chat_id, file, timeout=60)
+                sent_count += 1
+                os.remove(path)
+                time.sleep(1.2)
+            except Exception as e:
+                bot.send_message(chat_id, f"⚠️ خطأ في الملف {f}: {e}")
+                report_bot.send_message(ADMIN_CHAT_ID, f"⚠️ فشل إرسال {f}:\n{e}")
 
-                    caption = message.text or "🔄 تم النقل من البوت"
-                    await client.send_file(target_group, path, caption=caption)
-                    log(f"✅ [{msg_index}/{len(batch)}] تم رفع الرسالة {message.id}")
+        time.sleep(5)  # انتظار بين الدفعات
 
-                    if os.path.exists(path):
-                        os.remove(path)
+    bot.send_message(chat_id, f"✅ تم إرسال {sent_count} ملف بنجاح.")
+    report_bot.send_message(ADMIN_CHAT_ID, f"📤 تم الانتهاء من الإرسال إلى المستخدم ID {chat_id}، عدد الملفات: {sent_count}")
 
-                except Exception as e:
-                    log(f"❌ خطأ في الرسالة {message.id}: {e}")
-                    await client.send_message(log_channel, f"❌ خطأ أثناء رفع الرسالة {message.id}: {e}")
-
-            log(f"✅ انتهاء الدفعة {batch_counter}")
-            await client.send_message(log_channel, f"📤 تم رفع الدفعة {batch_counter} ({len(batch)} منشور) بنجاح.")
-            await asyncio.sleep(wait_seconds)
-
-        log("🎉 تم الانتهاء من جميع الدفعات")
-        await client.send_message(log_channel, "✅ انتهى السكربت من نقل جميع المنشورات بنجاح.")
-
-        if os.path.exists(media_dir):
-            shutil.rmtree(media_dir)
-
-if __name__ == '__main__':
-    asyncio.run(main())
+print("✅ البوت يعمل الآن...")
+bot.infinity_polling()
