@@ -1,25 +1,26 @@
-import telebot
-import subprocess
 import os
 import time
+import subprocess
 from flask import Flask, request
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Update
+import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot import apihelper
 
-# التوكن الخاص ببوت التحميل
-BOT_TOKEN = '8047447672:AAE6xtDMxrFfmD6Cl7jkEAYIfLsyLiKC1xE'
-bot = telebot.TeleBot(BOT_TOKEN)
+TOKEN ='8047447672:AAE6xtDMxrFfmD6Cl7jkEAYIfLsyLiKC1xE'
+bot = telebot.TeleBot(TOKEN)
+WEBHOOK_URL = 'https://اسم-تطبيقك.onrender.com/'  # ← غيّره إلى رابط موقعك
 
 app = Flask(__name__)
 
-@app.route('/')
-def home():
-    return "✅ البوت يعمل عبر Webhook!"
-
-@app.route(f'/{BOT_TOKEN}', methods=['POST'])
+@app.route('/', methods=['POST'])
 def webhook():
-    update = Update.de_json(request.get_json(force=True))
-    bot.process_new_updates([update])
-    return "!", 200
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return '', 200
+    else:
+        return '403 Forbidden', 403
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -79,7 +80,7 @@ def download_tiktok_videos(chat_id, url):
                         bot.send_audio(chat_id, file, timeout=60)
                     else:
                         bot.send_document(chat_id, file, timeout=60)
-                sent_count += 1
+                    sent_count += 1
                 os.remove(path)
                 time.sleep(1.2)
             except Exception as e:
@@ -88,11 +89,33 @@ def download_tiktok_videos(chat_id, url):
 
     bot.send_message(chat_id, f"✅ تم إرسال {sent_count} ملف بنجاح.")
 
-# إعداد Webhook
-WEBHOOK_URL = f'https://اسم-مشروعك.onrender.com/{BOT_TOKEN}'
+# === إعادة محاولة تفعيل الويبهوك مهما حصل ===
+def set_webhook_forever():
+    while True:
+        try:
+            bot.remove_webhook()
+            time.sleep(1)
+            bot.set_webhook(url=WEBHOOK_URL)
+            print("✅ تم تفعيل Webhook بنجاح")
+            break
+        except apihelper.ApiTelegramException as e:
+            if e.result.status_code == 429:
+                wait_time = int(e.result.json()['parameters']['retry_after'])
+                print(f"⏳ تم رفض الطلب مؤقتًا، إعادة المحاولة بعد {wait_time} ثانية...")
+                time.sleep(wait_time + 1)
+            else:
+                print(f"❌ خطأ عند محاولة تفعيل Webhook: {e}")
+                time.sleep(10)
+        except Exception as e:
+            print(f"❌ خطأ غير متوقع عند تفعيل Webhook: {e}")
+            time.sleep(10)
 
-if __name__ == '__main__':
-    bot.remove_webhook()
-    bot.set_webhook(url=WEBHOOK_URL)
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+if __name__ == "__main__":
+    print("🚀 بدء تشغيل البوت باستخدام Webhook...")
+    while True:
+        try:
+            set_webhook_forever()
+            app.run(host="0.0.0.0", port=10000)
+        except Exception as e:
+            print(f"❌ خطأ في الخادم: {e}\n🔁 إعادة التشغيل خلال 10 ثواني...")
+            time.sleep(10)
