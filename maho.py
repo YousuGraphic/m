@@ -1,37 +1,38 @@
+import telebot
+import subprocess
 import os
 import time
-import subprocess
 from flask import Flask, request
-import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from telebot import apihelper
 
-TOKEN ='8047447672:AAE6xtDMxrFfmD6Cl7jkEAYIfLsyLiKC1xE'
+TOKEN = '8047447672:AAE6xtDMxrFfmD6Cl7jkEAYIfLsyLiKC1xE'
+WEBHOOK_URL = 'https://m-11.onrender.com/'  # رابط تطبيقك
 bot = telebot.TeleBot(TOKEN)
-WEBHOOK_URL = 'https://اسم-تطبيقك.onrender.com/'  # ← غيّره إلى رابط موقعك
-
 app = Flask(__name__)
 
 @app.route('/', methods=['POST'])
 def webhook():
-    if request.headers.get('content-type') == 'application/json':
-        json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
-        bot.process_new_updates([update])
-        return '', 200
-    else:
-        return '403 Forbidden', 403
+    json_string = request.get_data().decode('utf-8')
+    update = telebot.types.Update.de_json(json_string)
+    bot.process_new_updates([update])
+    return 'ok', 200
 
+@app.route('/', methods=['GET'])
+def index():
+    return 'Bot is alive!', 200
+
+# بدء عند /start
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.reply_to(message, "🎯 أرسل رابط حساب تيك توك وسأبدأ بإرسال المقاطع على دفعات...")
 
+# عند استقبال رابط تيك توك
 @bot.message_handler(func=lambda m: 'tiktok.com/' in m.text)
 def handle_tiktok_account(message):
     url = message.text.strip()
     bot.send_message(message.chat.id, "⏳ جاري التحميل، سيتم الإرسال على دفعات...")
     download_tiktok_videos(message.chat.id, url)
 
+# وظيفة التحميل
 def download_tiktok_videos(chat_id, url):
     folder = "tiktok_temp"
     os.makedirs(folder, exist_ok=True)
@@ -61,8 +62,8 @@ def download_tiktok_videos(chat_id, url):
         return
 
     batch_size = 10
-    total = len(files)
     sent_count = 0
+    total = len(files)
 
     for i in range(0, total, batch_size):
         batch = files[i:i + batch_size]
@@ -81,41 +82,29 @@ def download_tiktok_videos(chat_id, url):
                     else:
                         bot.send_document(chat_id, file, timeout=60)
                     sent_count += 1
-                os.remove(path)
-                time.sleep(1.2)
+                    os.remove(path)
+                    time.sleep(1.2)
             except Exception as e:
                 bot.send_message(chat_id, f"⚠️ خطأ في الملف {f}: {e}")
         time.sleep(5)
 
     bot.send_message(chat_id, f"✅ تم إرسال {sent_count} ملف بنجاح.")
 
-# === إعادة محاولة تفعيل الويبهوك مهما حصل ===
-def set_webhook_forever():
-    while True:
+# تفعيل Webhook مع إعادة المحاولة اللانهائية
+def start_webhook():
+    print("🚀 بدء تشغيل البوت باستخدام Webhook...")
+    success = False
+    while not success:
         try:
             bot.remove_webhook()
             time.sleep(1)
             bot.set_webhook(url=WEBHOOK_URL)
+            success = True
             print("✅ تم تفعيل Webhook بنجاح")
-            break
-        except apihelper.ApiTelegramException as e:
-            if e.result.status_code == 429:
-                wait_time = int(e.result.json()['parameters']['retry_after'])
-                print(f"⏳ تم رفض الطلب مؤقتًا، إعادة المحاولة بعد {wait_time} ثانية...")
-                time.sleep(wait_time + 1)
-            else:
-                print(f"❌ خطأ عند محاولة تفعيل Webhook: {e}")
-                time.sleep(10)
         except Exception as e:
-            print(f"❌ خطأ غير متوقع عند تفعيل Webhook: {e}")
-            time.sleep(10)
+            print(f"❌ فشل التفعيل، إعادة المحاولة خلال 5 ثواني... {e}")
+            time.sleep(5)
 
-if __name__ == "__main__":
-    print("🚀 بدء تشغيل البوت باستخدام Webhook...")
-    while True:
-        try:
-            set_webhook_forever()
-            app.run(host="0.0.0.0", port=10000)
-        except Exception as e:
-            print(f"❌ خطأ في الخادم: {e}\n🔁 إعادة التشغيل خلال 10 ثواني...")
-            time.sleep(10)
+if __name__ == '__main__':
+    start_webhook()
+    app.run(host="0.0.0.0", port=10000)
