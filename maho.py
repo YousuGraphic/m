@@ -2,14 +2,24 @@ import telebot
 import subprocess
 import os
 import time
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from flask import Flask, request
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Update
 
-DOWNLOADER_TOKEN = '8047447672:AAE6xtDMxrFfmD6Cl7jkEAYIfLsyLiKC1xE'
-REPORT_BOT_TOKEN = '7011824186:AAG0dNuE_hqg6tYuEZliyPXl2I3ashFwEHc'
-ADMIN_CHAT_ID = 5711313662
+# التوكن الخاص ببوت التحميل
+BOT_TOKEN = '8047447672:AAE6xtDMxrFfmD6Cl7jkEAYIfLsyLiKC1xE'
+bot = telebot.TeleBot(BOT_TOKEN)
 
-bot = telebot.TeleBot(DOWNLOADER_TOKEN)
-report_bot = telebot.TeleBot(REPORT_BOT_TOKEN)
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "✅ البوت يعمل عبر Webhook!"
+
+@app.route(f'/{BOT_TOKEN}', methods=['POST'])
+def webhook():
+    update = Update.de_json(request.get_json(force=True))
+    bot.process_new_updates([update])
+    return "!", 200
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -18,18 +28,6 @@ def start(message):
 @bot.message_handler(func=lambda m: 'tiktok.com/' in m.text)
 def handle_tiktok_account(message):
     url = message.text.strip()
-    user = message.from_user
-    username = f"@{user.username}" if user.username else "لا يوجد"
-    report = f"""📥 تيك توك - تحميل مباشر:
-👤 الاسم: {user.first_name}
-🆔 ID: {user.id}
-🔖 المستخدم: {username}
-🔗 الرابط: {url}"""
-    try:
-        report_bot.send_message(ADMIN_CHAT_ID, report)
-    except Exception as e:
-        print("⚠️ تقرير فشل:", e)
-
     bot.send_message(message.chat.id, "⏳ جاري التحميل، سيتم الإرسال على دفعات...")
     download_tiktok_videos(message.chat.id, url)
 
@@ -52,7 +50,6 @@ def download_tiktok_videos(chat_id, url):
 
     try:
         subprocess.run(command, check=True)
-        report_bot.send_message(ADMIN_CHAT_ID, "✅ تم التحميل بنجاح، جاري الإرسال على دفعات...")
     except subprocess.CalledProcessError as e:
         bot.send_message(chat_id, f"❌ خطأ في التحميل:\n{e}")
         return
@@ -87,23 +84,15 @@ def download_tiktok_videos(chat_id, url):
                 time.sleep(1.2)
             except Exception as e:
                 bot.send_message(chat_id, f"⚠️ خطأ في الملف {f}: {e}")
-                report_bot.send_message(ADMIN_CHAT_ID, f"⚠️ فشل إرسال {f}:\n{e}")
-
         time.sleep(5)
 
     bot.send_message(chat_id, f"✅ تم إرسال {sent_count} ملف بنجاح.")
-    report_bot.send_message(ADMIN_CHAT_ID, f"📤 تم الانتهاء من الإرسال إلى المستخدم ID {chat_id}، عدد الملفات: {sent_count}")
 
-# حلقة إعادة التشغيل التلقائي عند أي خطأ مهما كان
-print("✅ البوت يعمل الآن...")
+# إعداد Webhook
+WEBHOOK_URL = f'https://اسم-مشروعك.onrender.com/{BOT_TOKEN}'
 
-while True:
-    try:
-        bot.infinity_polling()
-    except Exception as e:
-        print(f"⚠️ حدث خطأ: {e}")
-        try:
-            report_bot.send_message(ADMIN_CHAT_ID, f"❌ تعطل البوت:\n{e}\n📡 إعادة التشغيل خلال 10 ثوانٍ...")
-        except:
-            pass
-        time.sleep(10)
+if __name__ == '__main__':
+    bot.remove_webhook()
+    bot.set_webhook(url=WEBHOOK_URL)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
