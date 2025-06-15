@@ -89,10 +89,21 @@ def download_tiktok_videos(chat_id, url):
                 bot.send_message(chat_id, f"⚠️ خطأ في الملف {f}: {e}")
                 report_bot.send_message(ADMIN_CHAT_ID, f"⚠️ فشل إرسال {f}:\n{e}")
 
-        time.sleep(5)  # انتظار بين الدفعات
+        time.sleep(5)
 
     bot.send_message(chat_id, f"✅ تم إرسال {sent_count} ملف بنجاح.")
     report_bot.send_message(ADMIN_CHAT_ID, f"📤 تم الانتهاء من الإرسال إلى المستخدم ID {chat_id}، عدد الملفات: {sent_count}")
 
+# حلقة إعادة التشغيل التلقائي عند أي خطأ مهما كان
 print("✅ البوت يعمل الآن...")
-bot.infinity_polling()
+
+while True:
+    try:
+        bot.infinity_polling()
+    except Exception as e:
+        print(f"⚠️ حدث خطأ: {e}")
+        try:
+            report_bot.send_message(ADMIN_CHAT_ID, f"❌ تعطل البوت:\n{e}\n📡 إعادة التشغيل خلال 10 ثوانٍ...")
+        except:
+            pass
+        time.sleep(10)
